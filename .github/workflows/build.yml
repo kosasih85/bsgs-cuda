@@ -3,38 +3,62 @@ name: Build BSGS CUDA for Windows
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch:   # Memungkinkan Anda menjalankan manual dari tab Actions
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-latest   # Runner Windows dengan CUDA toolkit sudah terinstall
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Install CUDA
+
+    # Langkah 1: Verifikasi CUDA (untuk memastikan tersedia)
+    - name: Verify CUDA installation
       run: |
-        choco install cuda --version=11.8 -y --force
-        echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-    
+        Write-Host "Checking CUDA..."
+        & "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8\bin\nvcc.exe" --version
+      shell: pwsh
+
+    # Langkah 2: Install vcpkg dan library secp256k1 (lebih cepat dan andal)
     - name: Install vcpkg and secp256k1
       run: |
-        git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-        C:\vcpkg\bootstrap-vcpkg.bat
-        C:\vcpkg\vcpkg install secp256k1:x64-windows
-    
+        # Clone vcpkg jika belum ada
+        if (-not (Test-Path "C:\vcpkg")) {
+          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+        }
+        # Bootstrap vcpkg
+        C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        # Install secp256k1 (library yang diperlukan)
+        C:\vcpkg\vcpkg install secp256k1:x64-windows --clean-after-build
+        # Integrasikan dengan MSVC (opsional, membantu menemukan header)
+        C:\vcpkg\vcpkg integrate install
+      shell: pwsh
+
+    # Langkah 3: Kompilasi program CUDA
     - name: Compile BSGS CUDA
       run: |
+        # Siapkan environment compiler
+        & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        
+        $CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8"
+        $env:PATH = "$CUDA_PATH\bin;$env:PATH"
+        $env:INCLUDE = "C:\vcpkg\installed\x64-windows\include;$env:INCLUDE"
+        $env:LIB = "C:\vcpkg\installed\x64-windows\lib;$env:LIB"
+
+        # Perintah nvcc
         nvcc -O3 -arch=sm_61 -DHT_LOAD_TIGHT `
              -I"C:\vcpkg\installed\x64-windows\include" `
              -L"C:\vcpkg\installed\x64-windows\lib" `
              -o bsgs_2p52_cuda.exe `
              bsgs_2p52_cuda.cu `
              -lsecp256k1 -lcudart -lpthread
-    
-    - name: Upload artifact
+      shell: pwsh
+
+    # Langkah 4: Upload hasil kompilasi sebagai artifact
+    - name: Upload executable
       uses: actions/upload-artifact@v4
       with:
         name: bsgs-cuda-exe
         path: bsgs_2p52_cuda.exe
+        if-no-files-found: error
