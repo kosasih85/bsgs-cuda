@@ -1,0 +1,33 @@
+name: Docker Build BSGS CUDA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build Docker image and extract binary
+      run: |
+        # Build Docker image
+        docker build -t bsgs-builder .
+        
+        # Create container and copy binary out
+        docker create --name bsgs bsgs-builder
+        docker cp bsgs:/workspace/bsgs_2p52_cuda ./bsgs_2p52_cuda
+        docker rm bsgs
+        
+        # Make sure it's executable
+        chmod +x bsgs_2p52_cuda
+        
+        # Create a Windows-compatible zip (binary won't run on Windows, but we keep it)
+        zip -r bsgs_cuda_binary.zip bsgs_2p52_cuda
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bsgs-cuda-linux
+        path: bsgs_cuda_binary.zip
