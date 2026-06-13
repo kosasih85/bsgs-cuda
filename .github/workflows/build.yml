@@ -1,0 +1,40 @@
+name: Build BSGS CUDA for Windows
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install CUDA
+      run: |
+        choco install cuda --version=11.8 -y --force
+        echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    
+    - name: Install vcpkg and secp256k1
+      run: |
+        git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+        C:\vcpkg\bootstrap-vcpkg.bat
+        C:\vcpkg\vcpkg install secp256k1:x64-windows
+    
+    - name: Compile BSGS CUDA
+      run: |
+        nvcc -O3 -arch=sm_61 -DHT_LOAD_TIGHT `
+             -I"C:\vcpkg\installed\x64-windows\include" `
+             -L"C:\vcpkg\installed\x64-windows\lib" `
+             -o bsgs_2p52_cuda.exe `
+             bsgs_2p52_cuda.cu `
+             -lsecp256k1 -lcudart -lpthread
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bsgs-cuda-exe
+        path: bsgs_2p52_cuda.exe
